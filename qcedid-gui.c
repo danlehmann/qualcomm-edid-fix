@@ -173,7 +173,7 @@ static void evaluate_simple(void)
     table_compute(now, now->declared_bpc ? now->declared_bpc : 8);
     table_from_edid(&g.orig, &g.fixed);
     g.fixed_bpc = table_effective_bpc(&g.fixed, 0);
-    table_auto_trim(&g.fixed, g.fixed_bpc, NULL, NULL);
+    table_auto_trim(&g.fixed, g.fixed_bpc, TRIM_MARGIN, NULL, NULL);
     table_compute(&g.fixed, g.fixed_bpc);
 
     const Row *now_best = best_mode(now, 1), *fix_best = best_mode(&g.fixed, 1), *top = best_mode(&g.fixed, 0);
@@ -838,7 +838,7 @@ static LRESULT CALLBACK wndproc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
         case ID_OPEN: on_open(); return 0;
         case ID_REFRESH: load_monitors(); return 0;
         case ID_AUTO_TRIM:
-            table_auto_trim(&g.table, current_bpc(), NULL, NULL);
+            table_auto_trim(&g.table, current_bpc(), TRIM_MARGIN, NULL, NULL);
             update_rows();
             return 0;
         case ID_RESET:

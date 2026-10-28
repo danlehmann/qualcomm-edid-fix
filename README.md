@@ -88,6 +88,9 @@ From an **elevated** prompt. Saves the original EDID to `%ProgramData%\qcedid`, 
 the override and loads it. Then **unplug and replug the monitor**. Options:
 
 - `--bpc N`: declare N bits per colour instead of the automatic choice.
+- `--margin N`: mode list slots to keep free after the DisplayID modes (default 4). Raise
+  it if DisplayID modes are still missing: the driver adds modes the tool does not model,
+  for example for monitors with a variable refresh range.
 - `--display-id N`: load it on one driver output only (default: all external outputs).
 - `--force`: run on an untested driver version, or on an EDID without DisplayID timings.
 
@@ -98,7 +101,7 @@ qcedid clear [--display-id N]
 Removes the override; replug the monitor afterwards. Rebooting also removes it.
 
 ```
-qcedid analyze edid.bin [--bpc N] [--out trimmed.bin]
+qcedid analyze edid.bin [--bpc N] [--margin N] [--out trimmed.bin]
 ```
 
 Offline: shows the mode table before and after trimming for a raw EDID file.
@@ -120,6 +123,10 @@ display, to confirm what the driver is actually sending.
 - The slot model is inferred from the driver's code and checked against one monitor.
   Pixel clocks marked `~` are estimates, and the driver may skip or merge modes the model
   counts. Auto trim leaves 4 slots free for that reason.
+- The tool only fixes modes that the 32-mode limit drops. The driver also rejects modes
+  above a configured maximum refresh rate (on a Surface Pro 11 apparently 120 Hz) and
+  modes that need more than the uncompressed link bandwidth; for example 5120x2160 at
+  120 or 165 Hz on an Alienware AW3926QW stays unavailable.
 - The link must actually have the bandwidth: a USB-C hub or dock that keeps USB 3 data
   usually leaves only 2 DisplayPort lanes, which cannot carry 4K @ 120 Hz.
 

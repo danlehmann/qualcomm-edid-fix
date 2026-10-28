@@ -11,10 +11,11 @@ static void usage(void)
            "  qcedid list                       show external monitors and whether they are affected\n"
            "  qcedid apply [target] [options]   load a trimmed EDID override (elevated)\n"
            "      --bpc N          declare N bits per colour (default: 8 only when needed)\n"
+           "      --margin N       mode list slots to keep free after DisplayID (default: 4)\n"
            "      --display-id N   only this driver display id (default: all external outputs)\n"
            "      --force          allow untested drivers / EDIDs without DisplayID\n"
            "  qcedid clear [--display-id N]     remove the override\n"
-           "  qcedid analyze <edid.bin> [--bpc N] [--out file]\n"
+           "  qcedid analyze <edid.bin> [--bpc N] [--margin N] [--out file]\n"
            "                                    show the mode table and what apply would change\n\n"
            "Overrides last until reboot. Replug the monitor after apply or clear.\n");
 }
@@ -39,7 +40,8 @@ static int has_flag(int argc, wchar_t **argv, const wchar_t *name)
 static const wchar_t *positional(int argc, wchar_t **argv)
 {
     for (int i = 0; i < argc; i++) {
-        if (!wcscmp(argv[i], L"--bpc") || !wcscmp(argv[i], L"--display-id") || !wcscmp(argv[i], L"--out")) {
+        if (!wcscmp(argv[i], L"--bpc") || !wcscmp(argv[i], L"--display-id") || !wcscmp(argv[i], L"--out") ||
+            !wcscmp(argv[i], L"--margin")) {
             i++;
             continue;
         }
@@ -58,6 +60,14 @@ static int parse_bpc(int argc, wchar_t **argv, int *bpc)
         return 0;
     }
     return 1;
+}
+
+// Value of --margin, or TRIM_MARGIN.
+static int parse_margin(int argc, wchar_t **argv)
+{
+    const wchar_t *v = opt_value(argc, argv, L"--margin");
+    int margin = v ? _wtoi(v) : TRIM_MARGIN;
+    return margin < 0 ? 0 : margin > MODE_LIMIT - 1 ? MODE_LIMIT - 1 : margin;
 }
 
 static void print_log(void *ctx, const char *line)
@@ -86,13 +96,13 @@ static void print_table(const ModeTable *t)
 }
 
 // Builds the override from orig into out, printing each change; t holds the result.
-static int build(const Edid *orig, int bpc_choice, Edid *out, ModeTable *t)
+static int build(const Edid *orig, int bpc_choice, int margin, Edid *out, ModeTable *t)
 {
     table_from_edid(orig, t);
     int bpc = table_effective_bpc(t, bpc_choice);
     if (bpc != t->declared_bpc)
         printf("  - declaring %d bpc (was %d)\n", bpc, t->declared_bpc);
-    int ok = table_auto_trim(t, bpc, print_log, NULL);
+    int ok = table_auto_trim(t, bpc, margin, print_log, NULL);
     table_compute(t, bpc);
     edid_build(orig, t, bpc, out);
     if (!ok)
@@ -213,7 +223,7 @@ static int cmd_apply(int argc, wchar_t **argv)
         return 1;
     }
     printf("Building override for %ls (target %u):\n", m->name, m->target);
-    build(&orig, bpc, &e, t);
+    build(&orig, bpc, parse_margin(argc, argv), &e, t);
     free(t);
     if (!write_override_xml(&e)) {
         fprintf(stderr, "%s\n", core_error());
@@ -271,7 +281,7 @@ static int cmd_analyze(int argc, wchar_t **argv)
     printf("%ls: %d blocks, declared %d bpc\n\nAs the driver sees it:\n", path, orig.blocks, t->declared_bpc);
     print_table(t);
     printf("\nOverride:\n");
-    build(&orig, bpc, &e, t);
+    build(&orig, bpc, parse_margin(argc, argv), &e, t);
     printf("\n");
     print_table(t);
     free(t);

@@ -7,6 +7,10 @@
 #define MODE_LIMIT 32        // KMD mode list capacity per display
 #define LINK_KBPS 25920000LL // 4-lane HBR3 payload bandwidth
 #define MAX_ROWS 256
+// Slots auto trim leaves free after the last DisplayID mode by default, since the slot
+// model is inferred from the driver and may miss modes it adds (for example from a
+// variable refresh range) or skips.
+#define TRIM_MARGIN 4
 
 typedef struct {
     BYTE b[MAX_BLOCKS * 128];
@@ -66,9 +70,10 @@ void table_compute(ModeTable *t, int bpc);
 int table_displayid_dropped(const ModeTable *t);
 int table_count(const ModeTable *t, RowSource source);
 void table_reset(ModeTable *t);
-// Removes the least valuable rows until no DisplayID row is dropped. log (may be NULL)
+// Removes the least valuable rows until every DisplayID row has a slot at least margin
+// below the limit (TRIM_MARGIN is the default). log (may be NULL)
 // receives one line per change. Returns 1 if all DisplayID rows fit.
-int table_auto_trim(ModeTable *t, int bpc, void (*log)(void *ctx, const char *line), void *ctx);
+int table_auto_trim(ModeTable *t, int bpc, int margin, void (*log)(void *ctx, const char *line), void *ctx);
 void edid_build(const Edid *orig, const ModeTable *t, int bpc, Edid *out);
 const char *row_source_name(const Row *r, char *buf, size_t len);
 const char *row_status_name(const Row *r);

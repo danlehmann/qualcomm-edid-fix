@@ -404,10 +404,6 @@ static double drop_score(const Row *r)
     return (r->interlaced ? 0 : 1e9) + (double)r->h * r->w + r->hz / 1000;
 }
 
-// Slots auto trim leaves free after the last DisplayID mode, since the slot model is
-// inferred from the driver and may miss a mode it adds or skips.
-#define TRIM_MARGIN 4
-
 static int displayid_over(const ModeTable *t, int limit)
 {
     for (int i = 0; i < t->n; i++)
@@ -416,7 +412,7 @@ static int displayid_over(const ModeTable *t, int limit)
     return 0;
 }
 
-int table_auto_trim(ModeTable *t, int bpc, void (*log)(void *, const char *), void *ctx)
+int table_auto_trim(ModeTable *t, int bpc, int margin, void (*log)(void *, const char *), void *ctx)
 {
     table_compute(t, bpc);
 
@@ -429,7 +425,7 @@ int table_auto_trim(ModeTable *t, int bpc, void (*log)(void *, const char *), vo
         1u << SRC_CTA_VIC,
         1u << SRC_CTA_DETAILED | 1u << SRC_DETAILED,
     };
-    int limit = MODE_LIMIT - TRIM_MARGIN;
+    int limit = MODE_LIMIT - margin;
     for (size_t s = 0; s < sizeof stages / sizeof *stages && displayid_over(t, limit); s++) {
         while (displayid_over(t, limit)) {
             Row *best = NULL;
@@ -712,18 +708,19 @@ int list_monitors(Monitor *mons, int max)
 }
 
 
-// %ProgramData%\qcedid\<instance>.edid holds the monitor's unmodified EDID.
-static void cache_path(const Monitor *m, WCHAR *out, size_t len)
+// %ProgramData%\qcedid\<manufacturer, product and serial>.edid holds the unmodified EDID of
+// a monitor. The override keeps EDID bytes 8..17, so the name is the same while it is
+// active, and it does not depend on the port the monitor is connected to.
+static void cache_path(const Edid *e, WCHAR *out, size_t len)
 {
     WCHAR base[MAX_PATH];
     if (!GetEnvironmentVariableW(L"ProgramData", base, MAX_PATH))
         wcscpy(base, L"C:\\ProgramData");
-    WCHAR inst[256];
-    wcscpy(inst, m->instance);
-    for (WCHAR *p = inst; *p; p++)
-        if (*p == L'\\' || *p == L'&')
-            *p = L'_';
-    swprintf(out, len, L"%ls\\qcedid\\%ls.edid", base, inst);
+    const BYTE *b = e->b;
+    WCHAR vendor[4] = { (WCHAR)('@' + ((b[8] >> 2) & 31)), (WCHAR)('@' + (((b[8] & 3) << 3) | (b[9] >> 5))),
+                        (WCHAR)('@' + (b[9] & 31)), 0 };
+    swprintf(out, len, L"%ls\\qcedid\\%ls%02X%02X_%02X%02X%02X%02X.edid", base, vendor, b[11], b[10], b[15], b[14],
+             b[13], b[12]);
 }
 
 void original_edid(const Monitor *m, Edid *out, int *from_cache)
@@ -732,19 +729,22 @@ void original_edid(const Monitor *m, Edid *out, int *from_cache)
     Edid cached;
     *from_cache = 0;
     *out = m->edid;
-    cache_path(m, path, MAX_PATH);
+    cache_path(&m->edid, path, MAX_PATH);
     if (!edid_read_file(path, &cached))
         return;
-    // An active override has the same identity bytes and no legacy timings.
-    if (cached.blocks * 128 == m->edid.blocks * 128 && !memcmp(cached.b, m->edid.b, cached.blocks * 128))
+    if (cached.blocks == m->edid.blocks && !memcmp(cached.b, m->edid.b, cached.blocks * 128))
         return;
     if (memcmp(cached.b + 8, m->edid.b + 8, 10))
         return;
-    ModeTable *t = malloc(sizeof *t);
-    table_from_edid(&m->edid, t);
-    int legacy = table_count(t, SRC_ESTABLISHED) + table_count(t, SRC_STANDARD);
-    free(t);
-    if (!legacy) {
+    // An active override is the original with modes removed or a lower declared depth.
+    ModeTable *cur = malloc(sizeof *cur), *orig = malloc(sizeof *orig);
+    table_from_edid(&m->edid, cur);
+    table_from_edid(&cached, orig);
+    int overridden = table_count(cur, SRC_DISPLAYID) == table_count(orig, SRC_DISPLAYID) &&
+                     (cur->n < orig->n || cur->declared_bpc != orig->declared_bpc);
+    free(cur);
+    free(orig);
+    if (overridden) {
         *out = cached;
         *from_cache = 1;
     }
@@ -752,8 +752,9 @@ void original_edid(const Monitor *m, Edid *out, int *from_cache)
 
 int save_original(const Monitor *m, const Edid *e)
 {
+    (void)m;
     WCHAR path[MAX_PATH], dir[MAX_PATH];
-    cache_path(m, path, MAX_PATH);
+    cache_path(e, path, MAX_PATH);
     wcscpy(dir, path);
     *wcsrchr(dir, L'\\') = 0;
     CreateDirectoryW(dir, NULL);
