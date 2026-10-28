@@ -344,7 +344,7 @@ static void load_source(void)
             g.have_edid = 1;
         }
         swprintf(desc, 512, L"%ls, Windows target %u, %ls%ls", m->name, m->target, m->instance,
-                 g.from_cache ? L"\nAn override is active; showing the monitor's original EDID." : L"");
+                 g.from_cache ? L"\nAn override is active; unticked modes are the ones it removed." : L"");
     } else if (g.file[0]) {
         if (edid_read_file(g.file, &g.orig))
             g.have_edid = 1;
@@ -352,8 +352,20 @@ static void load_source(void)
         if (!g.have_edid)
             error_box();
     }
+    SendMessageW(g.bpc, CB_SETCURSEL, 0, 0);
     if (g.have_edid) {
         table_from_edid(&g.orig, &g.table);
+        if (g.from_cache) {
+            // Show the active override's selection and colour depth.
+            ModeTable *active = malloc(sizeof *active);
+            table_from_edid(&g.monitors[g.source].edid, active);
+            table_match(&g.table, active);
+            if (active->declared_bpc && active->declared_bpc != table_effective_bpc(&g.table, 0))
+                for (int i = 1; i < (int)(sizeof bpc_values / sizeof *bpc_values); i++)
+                    if (bpc_values[i] == active->declared_bpc)
+                        SendMessageW(g.bpc, CB_SETCURSEL, i, 0);
+            free(active);
+        }
         WCHAR more[160];
         swprintf(more, 160, L"\nAdreno driver %hs%ls. EDID: %d blocks, declares %d-bit colour.", g.driver,
                  driver_tested(g.driver) ? L" (tested)" : L" (untested)", g.orig.blocks, g.table.declared_bpc);

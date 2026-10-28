@@ -1,6 +1,7 @@
 // EDID mode table, override building and Qualcomm KMD access. See NOTES.md for the
 // reverse engineered driver behaviour this models.
 #include "qcedid_core.h"
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -381,6 +382,25 @@ void table_reset(ModeTable *t)
 {
     for (int i = 0; i < t->n; i++)
         t->rows[i].keep = 1;
+}
+
+static int same_row(const Row *a, const Row *b)
+{
+    return a->source == b->source && a->vic == b->vic && a->w == b->w && a->h == b->h &&
+           a->interlaced == b->interlaced && a->weight == b->weight && fabs(a->hz - b->hz) < 0.5;
+}
+
+void table_match(ModeTable *t, const ModeTable *active)
+{
+    BYTE used[MAX_ROWS] = { 0 };
+    for (int i = 0; i < t->n; i++) {
+        Row *r = &t->rows[i];
+        int found = 0;
+        for (int j = 0; j < active->n && !found; j++)
+            if (!used[j] && same_row(r, &active->rows[j]))
+                used[j] = found = 1;
+        r->keep = found || r->locked;
+    }
 }
 
 static void logf_(void (*log)(void *, const char *), void *ctx, const char *fmt, ...)

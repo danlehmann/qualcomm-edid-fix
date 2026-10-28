@@ -70,6 +70,9 @@ void table_compute(ModeTable *t, int bpc);
 int table_displayid_dropped(const ModeTable *t);
 int table_count(const ModeTable *t, RowSource source);
 void table_reset(ModeTable *t);
+// Unticks the rows of t (built from an original EDID) that have no counterpart in active
+// (built from an override made from it), so t shows the override's selection.
+void table_match(ModeTable *t, const ModeTable *active);
 // Removes the least valuable rows until every DisplayID row has a slot at least margin
 // below the limit (TRIM_MARGIN is the default). log (may be NULL)
 // receives one line per change. Returns 1 if all DisplayID rows fit.
