@@ -12,6 +12,12 @@ addresses with the default image base 0x140000000.
   cannot carry do not use up slots. The check is link bandwidth at the declared colour
   depth: CTA VIC 118 (4K120, 1188 MHz) is accepted at 6 bpc but not at 8 or 10 bpc on
   4-lane HBR3. There is no pixel clock cap below 1188 MHz.
+- Parse order in 0x140157548: CTA-861 extension blocks (including HDMI VICs 1..4),
+  then the four base block descriptors in order (detailed timings via 0x140158f40,
+  0xFA standard timing descriptors via 0x140159c80, 0xF7 established timings III),
+  then the base block standard timings (0x140159c80), then the 17 established timing
+  bits. Standard and established timings are added by index into the driver's timing
+  table (0x1401595c0), and add-mode skips an exact duplicate of a listed timing.
 - DisplayID is handled by 0x1401a9630, called after the base/CTA parse (0x140157548)
   from 0x14019ab8c and 0x14019acb8. It supports DisplayID 1.2, 1.3 and 2.0; type I
   (0x03) and type VII (0x22) timing blocks are decoded by 0x1401a7f90 and added through
