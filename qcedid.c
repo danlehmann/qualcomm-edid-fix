@@ -11,9 +11,9 @@ static void usage(void)
            "  qcedid list                       show external monitors and whether they are affected\n"
            "  qcedid apply [target] [options]   load a trimmed EDID override (elevated)\n"
            "      --bpc N          declare N bits per colour (default: 8 only when needed)\n"
-           "      --display-id N   driver display id (default: target + 1)\n"
+           "      --display-id N   only this driver display id (default: all external outputs)\n"
            "      --force          allow untested drivers / EDIDs without DisplayID\n"
-           "  qcedid clear [target | --all]     remove the override\n"
+           "  qcedid clear [--display-id N]     remove the override\n"
            "  qcedid analyze <edid.bin> [--bpc N] [--out file]\n"
            "                                    show the mode table and what apply would change\n\n"
            "Overrides last until reboot. Replug the monitor after apply or clear.\n");
@@ -112,8 +112,7 @@ static int cmd_list(void)
     ModeTable *t = malloc(sizeof *t);
     for (int i = 0; i < n; i++) {
         Monitor *m = &mons[i];
-        printf("[target %u] %ls  (%ls, driver display id %u)\n", m->target, m->name, m->instance,
-               display_id_for(m));
+        printf("[target %u] %ls  (%ls)\n", m->target, m->name, m->instance);
         if (!m->have_edid) {
             printf("    EDID not available\n\n");
             continue;
@@ -161,7 +160,7 @@ static int check_driver(int force)
         return 1;
     }
     fprintf(stderr,
-            "Driver %s is untested. The escape layout was reverse engineered from %s and may differ.\n"
+            "Driver %s is untested. The driver interface was checked against versions %s and may differ.\n"
             "Use --force to try anyway.\n",
             ver, tested_driver_version);
     return 0;
@@ -221,13 +220,14 @@ static int cmd_apply(int argc, wchar_t **argv)
         return 1;
     }
     const wchar_t *idv = opt_value(argc, argv, L"--display-id");
-    UINT id = idv ? (UINT)_wtoi(idv) : display_id_for(m);
-    if (send_override(m->adapter, id, 0) != 0 || send_override(m->adapter, id, 1) != 0) {
+    int outputs;
+    if (set_override(m->adapter, idv ? (UINT)_wtoi(idv) : 0, 1, &outputs) != 0) {
         fprintf(stderr, "%s\n", core_error());
         return 1;
     }
-    printf("Override loaded for driver display id %u. Unplug and replug the monitor.\n"
-           "It lasts until reboot or driver reload.\n", id);
+    printf("Override loaded on %d external output%s. Unplug and replug the monitor.\n"
+           "It lasts until reboot. Until then, other monitors plugged into this computer get this EDID too;\n"
+           "run qcedid clear before connecting a different monitor.\n", outputs, outputs == 1 ? "" : "s");
     return 0;
 }
 
@@ -236,26 +236,17 @@ static int cmd_clear(int argc, wchar_t **argv)
     if (!check_driver(has_flag(argc, argv, L"--force")))
         return 1;
     Monitor mons[8];
-    int n = list_monitors(mons, 8);
-    if (has_flag(argc, argv, L"--all")) {
-        if (!n) {
-            fprintf(stderr, "No external monitor connected to find the adapter; connect one and retry.\n");
-            return 1;
-        }
-        for (UINT id = 1; id <= 10; id++)
-            send_override(mons[0].adapter, id, 0);
-        printf("Cleared overrides on all display ids. Replug monitors.\n");
-        return 0;
-    }
-    Monitor *m = pick(mons, n, positional(argc, argv));
-    if (!m)
+    if (!list_monitors(mons, 8)) {
+        fprintf(stderr, "No external monitor connected to find the display adapter; connect one and retry.\n");
         return 1;
-    if (send_override(m->adapter, display_id_for(m), 0) != 0) {
+    }
+    const wchar_t *idv = opt_value(argc, argv, L"--display-id");
+    int outputs;
+    if (set_override(mons[0].adapter, idv ? (UINT)_wtoi(idv) : 0, 0, &outputs) != 0) {
         fprintf(stderr, "%s\n", core_error());
         return 1;
     }
-    printf("Cleared the override for %ls (driver display id %u). Replug the monitor.\n", m->name,
-           display_id_for(m));
+    printf("Cleared the override on %d output%s. Replug the monitor.\n", outputs, outputs == 1 ? "" : "s");
     return 0;
 }
 

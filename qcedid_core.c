@@ -7,7 +7,10 @@
 #include <string.h>
 #include <wchar.h>
 
-const char *const tested_driver_version = "31.0.152.1";
+// Driver versions whose escape layout, override file format and mode list limit were
+// checked against the disassembly.
+static const char *const tested_versions[] = { "31.0.152.1", "31.0.170.0" };
+const char *const tested_driver_version = "31.0.152.1 and 31.0.170.0";
 
 static char g_error[512];
 
@@ -708,9 +711,6 @@ int list_monitors(Monitor *mons, int max)
     return n;
 }
 
-// Observed on a Surface Pro 11: the internal panel is target 0 and display id 1; a USB-C
-// DisplayPort monitor was target 3 and display id 4.
-UINT display_id_for(const Monitor *m) { return m->target + 1; }
 
 // %ProgramData%\qcedid\<instance>.edid holds the monitor's unmodified EDID.
 static void cache_path(const Monitor *m, WCHAR *out, size_t len)
@@ -791,7 +791,13 @@ int driver_version(char *out, size_t len)
     return found;
 }
 
-int driver_tested(const char *version) { return !strcmp(version, tested_driver_version); }
+int driver_tested(const char *version)
+{
+    for (size_t i = 0; i < sizeof tested_versions / sizeof *tested_versions; i++)
+        if (!strcmp(version, tested_versions[i]))
+            return 1;
+    return 0;
+}
 
 int write_override_xml(const Edid *e)
 {
@@ -903,4 +909,30 @@ int send_override(LUID adapter, UINT display, UINT enable)
     D3DKMT_CLOSEADAPTER ca = { open.hAdapter };
     D3DKMTCloseAdapter(&ca);
     return status;
+}
+
+int set_override(LUID adapter, UINT display, UINT enable, int *outputs)
+{
+    UINT ids[10];
+    int n = 0;
+    if (display) {
+        if (send_override(adapter, display, 0) != 0)
+            return -1;
+        ids[n++] = display;
+    } else {
+        // Display id 1 is the internal panel; ids without display state report status 3.
+        for (UINT id = 2; id <= 10; id++)
+            if (send_override(adapter, id, 0) == 0)
+                ids[n++] = id;
+        if (!n) {
+            set_error("The driver reported no external display outputs.");
+            return -1;
+        }
+    }
+    for (int i = 0; enable && i < n; i++)
+        if (send_override(adapter, ids[i], 1) != 0)
+            return -1;
+    if (outputs)
+        *outputs = n;
+    return 0;
 }

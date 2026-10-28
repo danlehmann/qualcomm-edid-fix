@@ -86,8 +86,6 @@ typedef struct {
 } Monitor;
 
 int list_monitors(Monitor *mons, int max);
-// KMD display id of a Windows display target.
-UINT display_id_for(const Monitor *m);
 // The monitor's unmodified EDID. from_cache is set when the current EDID is an
 // active override and the original came from the cache.
 void original_edid(const Monitor *m, Edid *out, int *from_cache);
@@ -95,12 +93,17 @@ int save_original(const Monitor *m, const Edid *e);
 
 int driver_version(char *out, size_t len); // 0 if no Adreno adapter
 int driver_tested(const char *version);
-extern const char *const tested_driver_version;
+extern const char *const tested_driver_version; // tested versions, for messages
 
 int write_override_xml(const Edid *e);
 // Sends the EDID override command: enable = 1 loads edidoverride.xml, 0 clears.
 // Returns the command status (0 = ok), or -1 when the escape itself failed.
 int send_override(LUID adapter, UINT display, UINT enable);
+// Clears the override on one KMD display id, or on every external output when display is
+// 0 (the mapping from Windows targets to KMD display ids is not known), then loads
+// edidoverride.xml on them when enable is set. outputs (may be NULL) receives the number
+// of outputs affected. Returns 0 on success, -1 on failure.
+int set_override(LUID adapter, UINT display, UINT enable, int *outputs);
 
 // Description of the last failure of a function above.
 const char *core_error(void);

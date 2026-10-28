@@ -3,6 +3,11 @@
 Reverse engineered from `qcdxkm8380.sys` 31.0.152.1 (ARM64). Addresses are virtual
 addresses with the default image base 0x140000000.
 
+31.0.170.0 has the same escape code, buffer size and offsets, command layout, override
+file format, display state offsets and 32-entry mode list; only addresses moved (escape
+size check 0x14046e6b0, dispatcher 0x14010f378, `0x106` sub-command 2 at 0x140111854,
+add-mode 0x140159750).
+
 ## Mode list limit
 
 - The EDID is parsed into a per-display mode list. Add-mode (0x140159290) refuses new
@@ -54,6 +59,14 @@ The driver loads `C:\Windows\edidoverride.xml` when asked through `DxgkDdiEscape
 
 ## Display ids
 
-On a Surface Pro 11, ids 1, 4, 5, 6, 8, 9 and 10 have state; 2, 3 and 7 return status 3.
-The internal panel is Windows target 0 / display id 1, and a USB-C DisplayPort monitor
-was target 3 / display id 4.
+On a Surface Pro 11, ids 1, 4, 5, 6, 8, 9 and 10 have state; 2, 3 and 7 return status 3,
+with both driver versions. Id 1 is the internal panel. The Windows target id of the same
+USB-C monitor changed from 3 to 1 across a driver reinstall, so it does not identify the
+driver output; the tools load the override on every external id that has state.
+
+## Bandwidth and colour depth
+
+With the override declaring 8 bpc, the Philips 329M1RV runs 3840x2160 @ 120 Hz
+(1066.5 MHz) with HDR, and Windows reports 10 bpc RGB. That is about 32 Gbps
+uncompressed, above 4-lane HBR3, so the driver either uses DSC or reports 10 bpc while
+sending 8 bpc with dithering. The declared depth only gates the driver's mode list.
